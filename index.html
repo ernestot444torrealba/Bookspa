@@ -785,6 +785,20 @@ let deferredInstallPrompt = null;
 const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
 const isStandalone = (typeof window.matchMedia === 'function' && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
 
+// Chrome (y la mayoría de navegadores basados en Chromium en Android) solo dispara
+// "beforeinstallprompt" si hay un service worker activo controlando la página además
+// del manifiesto válido. Antes solo registrábamos el service worker cuando la clienta
+// activaba las notificaciones a mano, así que en la primera visita nunca aparecía el
+// botón de instalar. Ahora lo registramos apenas carga la app, sin pedir permisos.
+async function registerServiceWorkerEarly(){
+  if(!('serviceWorker' in navigator)) return;
+  try{
+    await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+  }catch(e){
+    console.warn('No se pudo registrar el service worker todavía', e);
+  }
+}
+
 // El navegador solo sabe "estoy corriendo en modo standalone" cuando abrís la app YA
 // instalada. Si el admin abre una pestaña normal del navegador después de instalar,
 // isStandalone da false y no hay forma nativa de preguntar "¿ya está instalada?".
@@ -1029,6 +1043,7 @@ async function init(){
 
   const route = parseRoute();
   updateManifest();
+  registerServiceWorkerEarly();
 
   if(route.view==='admin'){
     STATE.view = 'admin';
@@ -2018,14 +2033,16 @@ function adminResumen(){
   const upcoming = STATE.appointments.filter(a=>a.date>today && notCancelled(a)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)).slice(0,5);
   const now = new Date();
   const weekAgo = new Date(now.getTime()-7*86400000);
-  const monthAgo = new Date(now.getTime()-30*86400000);
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const newThisWeek = STATE.appointments.filter(a=>a.createdAt>=weekAgo.getTime()).length;
   const cancelledThisWeek = STATE.appointments.filter(a=>a.cancelledAt && a.cancelledAt>=weekAgo.getTime()).length;
 
   const incomeFor = (fromTs)=>STATE.appointments.filter(a=>a.status==='completada' && a.createdAt>=fromTs).reduce((s,a)=>s+a.totalPrice,0);
   const incomeToday = STATE.appointments.filter(a=>a.date===today && a.status==='completada').reduce((s,a)=>s+a.totalPrice,0);
   const incomeWeek = incomeFor(weekAgo.getTime());
-  const incomeMonth = incomeFor(monthAgo.getTime());
+  // "Ingresos del mes" es del mes calendario en curso (se reinicia a 0 el día 1 de cada mes),
+  // no una ventana móvil de 30 días.
+  const incomeMonth = incomeFor(monthStart.getTime());
 
   const svcCount = {};
   STATE.appointments.forEach(a=>{ if(notCancelled(a)) a.services.forEach(s=>{ svcCount[s.name]=(svcCount[s.name]||0)+1; }); });
@@ -2128,7 +2145,10 @@ function adminCitas(){
             <td>${escapeHtml(a.services.map(s=>s.name).join(', '))}</td>
             <td>${money(a.totalPrice)}</td>
             <td><span class="status-pill status-${a.status}">${statusLabel(a.status)}</span></td>
-            <td><button class="icon-btn" data-action="admin-open-appt" data-id="${a.id}">⋯</button></td>
+            <td>
+              <button class="icon-btn" data-action="admin-open-appt" data-id="${a.id}">⋯</button>
+              <button class="icon-btn" data-action="admin-delete-appt" data-id="${a.id}" title="Eliminar cita">🗑</button>
+            </td>
           </tr>
         `).join('') : `<tr><td colspan="7"><div class="empty-state">No hay citas con estos filtros.</div></td></tr>`}
         </tbody>
@@ -2165,6 +2185,7 @@ function adminApptModal(id){
         <div style="display:flex;gap:10px;flex-wrap:wrap;">
           <button class="btn btn-primary" data-action="admin-save-appt" data-id="${a.id}">Guardar cambios</button>
           <button class="btn btn-outline" data-action="wa-appt" data-id="${a.id}">Contactar por WhatsApp</button>
+          <button class="btn btn-danger" data-action="admin-delete-appt" data-id="${a.id}">🗑 Eliminar cita</button>
           <button class="btn btn-ghost" data-action="admin-close-modal">Cerrar</button>
         </div>
       </div>
@@ -2547,6 +2568,12 @@ async function handleAdminAction(action, el){
       break;
     }
     case 'admin-open-appt': STATE.admin.openAppt = el.dataset.id; render(); break;
+    case 'admin-delete-appt': {
+      if(!confirm('¿Eliminar esta cita? Esta acción no se puede deshacer.')) return;
+      STATE.appointments = STATE.appointments.filter(a=>a.id!==el.dataset.id);
+      if(STATE.admin.openAppt===el.dataset.id) STATE.admin.openAppt=null;
+      await persistAppointments(); render(); break;
+    }
     case 'admin-close-modal': STATE.admin.openAppt=null; STATE.admin.editingService=null; STATE.admin.editingBreak=null; STATE.admin.editingBlock=false; STATE.admin.pendingServicePhoto=null; render(); break;
     case 'admin-save-appt': {
       const a = STATE.appointments.find(x=>x.id===el.dataset.id);
