@@ -17,6 +17,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging-compat.js"></script>
 <style>
   :root{
     --bg: #EDE7D5;
@@ -441,13 +442,18 @@ const firebaseConfig = {
   messagingSenderId: "1086916389294",
   appId: "1:1086916389294:web:ece17ce8ccd458ddc5803f"
 };
+// Clave VAPID pública (generada en Firebase Console → Cloud Messaging → Certificados
+// push web). Es pública a propósito: solo sirve para que el navegador se suscriba,
+// no para enviar mensajes — eso lo hace el servidor con la cuenta de servicio.
+const FCM_VAPID_KEY = "BPcPooZNh_K0TqO1HoMfYy5X-e4QsIc-Jv7jvshW-u3L002rx3lAcn8OeLE1zo5EBfrdVZ_PEBuprs9sx-9XblY";
 const FIREBASE_CONFIGURED = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('PEGA_TU_');
-let db = null, auth = null;
+let db = null, auth = null, messaging = null;
 if(FIREBASE_CONFIGURED){
   firebase.initializeApp(firebaseConfig);
   db = firebase.firestore();
   db.settings({ experimentalAutoDetectLongPolling: true });
   auth = firebase.auth();
+  try{ messaging = firebase.messaging(); }catch(e){ /* navegador sin soporte de Messaging (ej: Safari viejo) */ }
 }
 
 /* ---------- Storage helpers (Firebase Firestore, multi-tenant) ---------- */
@@ -561,10 +567,7 @@ function startRealtimeSync(){
   }, err=>console.error('sync alerts error', err));
 }
 
-/* ---------- Notificaciones del navegador (nueva cita / comentario) ---------- */
-// Usamos la Notification API del navegador: funciona mientras la app esté abierta
-// (en primer o segundo plano); no es lo mismo que push notifications con el celular
-// bloqueado, que necesitaría un service worker + servidor push (fuera de este archivo).
+/* ---------- Notificaciones: en pestaña abierta (Notification API) + push real (FCM) ---------- */
 let _knownAlertIds = null; // null = todavía no inicializado con la primera carga
 
 function notifyNewAlerts(incomingAlerts){
@@ -593,6 +596,49 @@ function notificationButtonLabel(){
   if(Notification.permission === 'granted') return '';
   if(Notification.permission === 'denied') return '🔕 Notificaciones bloqueadas';
   return '🔔 Activar notificaciones';
+}
+
+// Registra este dispositivo/navegador para recibir push reales (celular bloqueado o
+// app cerrada). Pide permiso, registra el service worker, obtiene el token FCM y lo
+// guarda en Firestore junto al negocio, para que la función del servidor sepa a qué
+// dispositivos avisar.
+async function enablePushNotifications(){
+  if(typeof Notification === 'undefined'){
+    alert('Tu navegador no soporta notificaciones.');
+    return false;
+  }
+  if(Notification.permission === 'denied'){
+    alert('Bloqueaste las notificaciones para este sitio. Para activarlas, entra a la configuración del navegador (ícono de candado junto a la URL) y permite "Notificaciones".');
+    return false;
+  }
+  const perm = await Notification.requestPermission();
+  if(perm !== 'granted') return false;
+
+  if(!messaging || !('serviceWorker' in navigator)){
+    // El navegador soporta notificaciones locales pero no push en segundo plano.
+    toast('Notificaciones activadas en esta pestaña 🔔');
+    return true;
+  }
+  try{
+    const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+    const token = await messaging.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
+    if(token) await savePushToken(token);
+    toast('Notificaciones push activadas 🔔 (llegan aunque cierres la app)');
+    return true;
+  }catch(e){
+    console.error('FCM token error', e);
+    toast('Se activaron las notificaciones en esta pestaña, pero el push en segundo plano no pudo configurarse.', true);
+    return true;
+  }
+}
+
+async function savePushToken(token){
+  if(!db || !STATE.tenantId) return;
+  const tokens = await loadKey('pushTokens', []);
+  if(!tokens.includes(token)){
+    tokens.push(token);
+    await saveKey('pushTokens', tokens);
+  }
 }
 
 /* ---------- Global state ---------- */
@@ -809,6 +855,24 @@ async function persistAlerts(){ await saveKey('alerts', STATE.alerts); }
 function pushAlert(type, message, extra){
   STATE.alerts.unshift({ id:uid('al'), type, message, createdAt:Date.now(), read:false, ...(extra||{}) });
   persistAlerts();
+  // Dispara el push real (llega aunque el salón tenga la app cerrada / el teléfono
+  // bloqueado). Es "fire and forget": si falla o no hay conexión, no debe frenar
+  // el flujo de reserva del cliente.
+  if(type==='nueva_reserva' || type==='whatsapp_solicitud'){
+    const title = type==='nueva_reserva' ? '🔔 Nueva cita reservada' : '💬 Nueva solicitud';
+    sendServerPush(title, message).catch(()=>{});
+  }
+}
+
+async function sendServerPush(title, body){
+  if(!STATE.tenantId) return;
+  try{
+    await fetch('/.netlify/functions/send-push', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ tenantId: STATE.tenantId, title, body })
+    });
+  }catch(e){ /* sin conexión a la función o red caída: se ignora silenciosamente */ }
 }
 
 /* ---------- Availability engine ---------- */
@@ -1641,16 +1705,7 @@ async function onAppClick(e){
       break;
     }
     case 'enable-notifications': {
-      if(typeof Notification === 'undefined'){
-        alert('Tu navegador no soporta notificaciones.');
-        break;
-      }
-      if(Notification.permission === 'denied'){
-        alert('Bloqueaste las notificaciones para este sitio. Para activarlas, entra a la configuración del navegador (ícono de candado junto a la URL) y permite "Notificaciones".');
-        break;
-      }
-      const perm = await Notification.requestPermission();
-      if(perm === 'granted') toast('Notificaciones activadas 🔔');
+      await enablePushNotifications();
       render();
       break;
     }
