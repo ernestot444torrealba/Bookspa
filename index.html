@@ -134,13 +134,13 @@
 
   .service-card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column;transition:box-shadow .15s, transform .15s;}
   .service-card:hover{box-shadow:var(--shadow-sm);transform:translateY(-2px);}
-  .service-media{height:110px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:linear-gradient(135deg,var(--surface-tint),var(--accent-soft));}
+  .service-media{height:190px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:linear-gradient(135deg,var(--surface-tint),var(--accent-soft));}
   .service-media img{width:100%;height:100%;object-fit:cover;}
   .svc-media-fallback{font-family:'Fraunces',serif;font-weight:600;font-size:32px;color:var(--primary);width:100%;height:100%;display:flex;align-items:center;justify-content:center;}
   .svc-thumb{width:34px;height:34px;border-radius:9px;overflow:hidden;background:linear-gradient(135deg,var(--surface-tint),var(--accent-soft));}
   .svc-thumb img{width:100%;height:100%;object-fit:cover;}
   .svc-thumb .svc-media-fallback{font-size:15px;}
-  .svc-photo-preview{width:100%;height:100px;border-radius:12px;overflow:hidden;background:var(--surface-tint);display:flex;align-items:center;justify-content:center;margin-top:6px;}
+  .svc-photo-preview{width:100%;height:180px;border-radius:12px;overflow:hidden;background:var(--surface-tint);display:flex;align-items:center;justify-content:center;margin-top:6px;}
   .svc-photo-preview img{width:100%;height:100%;object-fit:cover;}
   .service-body{padding:16px;display:flex;flex-direction:column;gap:8px;flex:1;}
   .service-cat{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent-dark);font-weight:700;}
@@ -391,20 +391,6 @@ function defaultConfig(){
     promos:[
       {id:'p1', title:'Martes de manicure', description:'15% de descuento en manicure los martes.'},
       {id:'p2', title:'Combo pedicure + manicure', description:'Reserva ambos servicios juntos con precio especial.'}
-    ],
-    faqs:[
-      {q:'¿Cuál es el horario de atención?', a:'Lunes a viernes de 9:00 a 18:00 (viernes hasta las 19:00) y sábados de 9:00 a 15:00.'},
-      {q:'¿Dónde están ubicados?', a:'Av. Principal 123. Puedes ver el mapa desde la sección de ubicación en la página principal.'},
-      {q:'¿Qué servicios ofrecen?', a:'Pedicure, manicure, mantenimiento de uñas, cejas y pestañas.'},
-      {q:'¿Cuáles son los precios?', a:'Cada servicio muestra su precio exacto en la sección de servicios antes de reservar.'},
-      {q:'¿Cómo puedo reservar?', a:'Desde el botón "Reservar cita": eliges tus servicios, el horario disponible y confirmas con tus datos.'},
-      {q:'¿Cómo puedo cancelar?', a:'Desde el enlace privado de tu cita ("Consultar mi cita"), siempre que se respete el tiempo mínimo de cancelación.'},
-      {q:'¿Aceptan pagos por transferencia?', a:'Sí, cuando el pago en línea esté activo se indican los métodos disponibles al confirmar.'},
-      {q:'¿Debo pagar anticipo?', a:'Depende del servicio; si se requiere, se indicará claramente antes de confirmar la cita.'},
-      {q:'¿Cuánto dura el servicio?', a:'La duración estimada aparece en cada servicio y también en el resumen antes de confirmar.'},
-      {q:'¿Atienden sin cita?', a:'Recomendamos siempre reservar con anticipación para asegurar tu horario.'},
-      {q:'¿Cuáles son las políticas de retraso?', a:'Retrasos mayores a 15 minutos podrían requerir reprogramar la cita.'},
-      {q:'¿Cómo hablo directamente con una persona?', a:'Usa el botón de WhatsApp flotante en cualquier momento.'}
     ],
     theme:{
       bg:'#EDE7D5',
@@ -2468,11 +2454,6 @@ function adminConfig(){
         </div>
       `).join('')}
       <button class="btn btn-outline btn-sm" data-action="admin-new-promo" style="margin-top:10px;">+ Agregar promoción</button>
-    </div>
-    <div class="card" style="margin-top:14px;">
-      <h3>Preguntas frecuentes (WhatsApp / FAQ)</h3>
-      ${c.faqs.map((f,i)=>`<div style="padding:8px 0;border-bottom:1px solid var(--line);"><b style="font-size:13px;">${escapeHtml(f.q)}</b><div style="font-size:12.5px;color:var(--ink-soft);">${escapeHtml(f.a)}</div></div>`).join('')}
-      <p class="helper-text">Estas respuestas son la base para el menú automático de WhatsApp; conéctalas a WhatsApp Business API en producción para automatizarlas del todo.</p>
     </div>
   `;
 }
