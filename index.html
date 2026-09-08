@@ -578,10 +578,15 @@ function notifyNewAlerts(incomingAlerts){
 }
 
 function notificationButtonLabel(){
-  if(typeof Notification === 'undefined') return '';
-  if(Notification.permission === 'granted') return '';
+  if(typeof Notification === 'undefined') return '⚠️ No disponibles en este navegador';
+  if(Notification.permission === 'granted') return '✅ Notificaciones activadas';
   if(Notification.permission === 'denied') return '🔕 Notificaciones bloqueadas';
   return '🔔 Activar notificaciones';
+}
+// Si ya están activadas o el navegador no las soporta aquí, no tiene sentido un
+// botón clicable (no hay nada que activar); mostramos el texto informativo solo.
+function notificationButtonIsAction(){
+  return typeof Notification !== 'undefined' && Notification.permission !== 'granted';
 }
 
 // Registra este dispositivo/navegador para recibir push reales (celular bloqueado o
@@ -812,7 +817,13 @@ function isPwaInstalled(){
 window.addEventListener('beforeinstallprompt', (e)=>{
   e.preventDefault();
   deferredInstallPrompt = e;
+  // Si el navegador dispara este evento es prueba de que la app NO está instalada
+  // en este momento. Si antes se había marcado como instalada (por ejemplo,
+  // porque se desinstaló el acceso directo sin que lo detectáramos), corregimos
+  // esa bandera vieja para que el botón "Instalar esta app" vuelva a aparecer.
+  try{ localStorage.removeItem(PWA_INSTALLED_KEY); }catch(_err){}
   showInstallButton();
+  render();
 });
 window.addEventListener('appinstalled', ()=>{
   deferredInstallPrompt = null;
@@ -1710,6 +1721,15 @@ async function onAppClick(e){
       render();
       break;
     }
+    case 'pwa-reset-check': {
+      // Borra la bandera "ya instalada" guardada en este navegador (útil si se
+      // desinstaló el acceso directo, o si quedó marcada por error en una prueba
+      // anterior) y recarga para que el navegador vuelva a evaluar si puede
+      // ofrecer instalar la app.
+      try{ localStorage.removeItem(PWA_INSTALLED_KEY); }catch(_err){}
+      location.reload();
+      break;
+    }
     case 'pwa-install': {
       if(deferredInstallPrompt){
         deferredInstallPrompt.prompt();
@@ -2005,7 +2025,7 @@ function renderAdmin(){
           <button class="${tab==='config'?'active':''}" data-action="admin-tab" data-tab="config">⚙️ Configuración</button>
         </nav>
         <div class="divider" style="background:rgba(255,255,255,0.15);"></div>
-        ${isPwaInstalled() ? '' : `<button class="btn btn-primary" data-action="pwa-install" style="width:100%;margin-bottom:10px;">📲 Instalar esta app</button>`}
+        ${isPwaInstalled() ? `<button class="link-btn" style="color:#C9D6CC;width:100%;text-align:left;margin-bottom:10px;" data-action="pwa-reset-check">📲 ¿No tienes la app instalada? Revisar de nuevo</button>` : `<button class="btn btn-primary" data-action="pwa-install" style="width:100%;margin-bottom:10px;">📲 Instalar esta app</button>`}
         <button class="link-btn" style="color:#C9D6CC;" data-action="admin-logout">Cerrar sesión</button>
         <button class="link-btn" style="color:#C9D6CC;" data-action="go" data-view="home">Ver sitio público</button>
       </div>
@@ -2083,7 +2103,7 @@ function adminResumen(){
           <h3 style="margin:0;">Alertas recientes</h3>
           <div style="display:flex;align-items:center;gap:8px;">
             ${unreadAlertBadge()}
-            ${notificationButtonLabel()? `<button class="link-btn" data-action="enable-notifications" style="font-size:12px;">${notificationButtonLabel()}</button>` : ''}
+            ${notificationButtonIsAction()? `<button class="link-btn" data-action="enable-notifications" style="font-size:12px;">${notificationButtonLabel()}</button>` : `<span style="font-size:12px;color:var(--ink-soft);" title="${typeof Notification==='undefined'?'Ábrelo en Chrome directamente (no en un enlace compartido desde otra app) para poder activarlas.':''}">${notificationButtonLabel()}</span>`}
             ${STATE.alerts.length? `<button class="link-btn" data-action="admin-clear-alerts" style="font-size:12px;">Borrar todo</button>` : ''}
           </div>
         </div>
